@@ -1,0 +1,36 @@
+# Python cache and compiled files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+venv/
+env/
+*.env
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Docker
+*.dockerignore
+
+# Temporary files
+*.swp
+*.tmp
+tmp/
+
+# Test files
+
+# Test files
+
+# Test files
+
+# Test files
+
+# Test files
+testfiles/*
