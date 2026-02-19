@@ -11,7 +11,6 @@ from tree_sitter_c import language as c_capsule
 from tree_sitter_cpp import language as cpp_capsule
 from tree_sitter_c_sharp import language as csharp_capsule
 
-
 # ---------------------------------------------------------------------------
 # Language registry — single canonical key per language
 # ---------------------------------------------------------------------------
@@ -28,34 +27,32 @@ LANGUAGE_MAP = {
     "csharp":     Language(csharp_capsule()),
 }
 
-# Pygments returns many variant names — normalise them all to canonical keys
+# Pygments aliases
 LANGUAGE_ALIASES = {
-    "c#":        "csharp",
-    "c sharp":   "csharp",
-    "csharp":    "csharp",
+    "c#": "csharp",
+    "c sharp": "csharp",
+    "csharp": "csharp",
     "c# (mono)": "csharp",
-    "python":    "python",
-    "python 3":  "python",
-    "javascript":"javascript",
-    "typescript":"typescript",
-    "java":      "java",
-    "go":        "go",
-    "rust":      "rust",
-    "c":         "c",
-    "c++":       "cpp",
-    "c/c++":     "cpp",
+    "python": "python",
+    "python 3": "python",
+    "javascript": "javascript",
+    "typescript": "typescript",
+    "java": "java",
+    "go": "go",
+    "rust": "rust",
+    "c": "c",
+    "c++": "cpp",
+    "c/c++": "cpp",
 }
 
-# Minimal-API style route methods to detect as pseudo-methods
+# Minimal-API route methods
 ROUTE_METHODS = {"MapGet", "MapPost", "MapPut", "MapPatch", "MapDelete"}
-
 
 # ---------------------------------------------------------------------------
 # Language detection
 # ---------------------------------------------------------------------------
 
 def detect_language(filename: str, code: str) -> str:
-    """Detect language from filename + content via Pygments, then normalise."""
     try:
         lexer = guess_lexer_for_filename(filename, code)
         raw = lexer.name.lower()
@@ -63,34 +60,22 @@ def detect_language(filename: str, code: str) -> str:
     except Exception:
         return "unknown"
 
-
 # ---------------------------------------------------------------------------
 # AST helpers
 # ---------------------------------------------------------------------------
 
 def get_node_name(node, code: str) -> str:
-    """
-    Return the identifier/name child of a node, or 'unknown'.
-    Checks direct children only; works for class/method/function declarations.
-    """
     for child in node.children:
         if child.type in ("identifier", "name", "type_identifier"):
             return code[child.start_byte:child.end_byte]
     return "unknown"
 
-
 def get_invocation_name(node, code: str) -> str:
-    """
-    For an invocation_expression node, extract the called method name.
-    Handles both  `api.MapGet(...)` and plain `MapGet(...)`.
-    """
     if not node.children:
         return "unknown"
     callee = node.children[0]
     text = code[callee.start_byte:callee.end_byte]
-    # Return just the final segment (e.g. "api.MapGet" → "MapGet")
     return text.split(".")[-1] if "." in text else text
-
 
 # ---------------------------------------------------------------------------
 # Structure extraction
@@ -98,22 +83,16 @@ def get_invocation_name(node, code: str) -> str:
 
 def extract_structure(language_name: str, code: str, filename: str = "") -> dict:
     if language_name not in LANGUAGE_MAP:
-        return {
-            "language": language_name,
-            "error": f"Language '{language_name}' is not supported.",
-            "components": [],
-        }
+        return {"language": language_name, "error": f"Language '{language_name}' is not supported.", "components": []}
 
     parser = Parser(LANGUAGE_MAP[language_name])
     tree = parser.parse(code.encode("utf-8"))
     root = tree.root_node
 
     components = []
-    top_level_statements = []
 
     def make_component(type_, name, node, class_name=None):
         snippet = code[node.start_byte:node.end_byte]
-
         # Normalize indentation
         lines = snippet.splitlines()
         if lines:
@@ -122,47 +101,32 @@ def extract_structure(language_name: str, code: str, filename: str = "") -> dict
         snippet = "\n".join(lines).strip()
 
         entry = {
-            "type":  type_,
-            "name":  name,
-            "lines": f"{node.start_point[0] + 1}-{node.end_point[0] + 1}",
-            "code":  snippet,
+            "type": type_,
+            "name": name,
+            "lines": f"{node.start_point[0]+1}-{node.end_point[0]+1}",
+            "code": snippet,
         }
         if class_name:
             entry["class"] = class_name
-
         components.append(entry)
 
     def walk(node, current_class=None):
-        # -----------------------------
-        # Class detection
-        # -----------------------------
         if node.type in ("class_definition", "class_declaration"):
             class_name = get_node_name(node, code)
-            make_component("class", class_name, node)
-            components[-1].pop("code")  # remove code for classes
-
+            make_component("class", class_name, node, current_class)
+            # walk children
             for child in node.children:
                 walk(child, class_name)
             return
 
-        # -----------------------------
-        # Function / method detection
-        # -----------------------------
         if node.type in (
             "function_definition", "function_declaration",
             "method_definition", "method_declaration",
             "constructor_declaration",
         ):
-            make_component(
-                "method" if current_class else "function",
-                get_node_name(node, code),
-                node,
-                current_class,
-            )
+            make_component("method" if current_class else "function",
+                           get_node_name(node, code), node, current_class)
 
-        # -----------------------------
-        # Minimal API route detection
-        # -----------------------------
         if node.type == "invocation_expression":
             method_name = get_invocation_name(node, code)
             if method_name in ROUTE_METHODS:
@@ -171,131 +135,35 @@ def extract_structure(language_name: str, code: str, filename: str = "") -> dict
                 if args and args[0].children:
                     first_arg = args[0].children[0]
                     route_path = code[first_arg.start_byte:first_arg.end_byte].strip('"')
-
-                make_component(
-                    "route",
-                    f"{method_name} {route_path}",
-                    node,
-                    current_class,
-                )
+                make_component("route", f"{method_name} {route_path}", node, current_class)
                 return
-
-        # -----------------------------
-        # Capture executable top-level statements
-        # -----------------------------
-        if node is root:
-            for child in node.children:
-                if child.type not in (
-                    "import_statement",
-                    "import_from_statement",
-                    "package_clause",
-                    "comment",
-                ):
-                    top_level_statements.append(child)
 
         for child in node.children:
             walk(child, current_class)
 
     walk(root)
 
-    # ---------------------------------------------------------
-    # Script detection fallback
-    # ---------------------------------------------------------
-    if not components and top_level_statements:
-        first = top_level_statements[0]
-        last = top_level_statements[-1]
-
-        snippet = code[first.start_byte:last.end_byte].strip()
-
+    # If no classes, methods, functions, or routes were detected, treat as a "script"
+    script_count = 0
+    if not any(c["type"] in ("class", "method", "function", "route") for c in components):
         components.append({
             "type": "script",
-            "name": "top-level code",
-            "lines": f"{first.start_point[0] + 1}-{last.end_point[0] + 1}",
-            "code": snippet,
+            "name": filename or "script",
+            "lines": f"1-{len(code.splitlines())}",
+            "code": code.strip()
         })
-
-    # ---------------------------------------------------------
-    # Summary counts
-    # ---------------------------------------------------------
-    method_count   = sum(1 for c in components if c["type"] == "method")
-    function_count = sum(1 for c in components if c["type"] == "function")
-    class_count    = sum(1 for c in components if c["type"] == "class")
-    route_count    = sum(1 for c in components if c["type"] == "route")
-    script_count   = sum(1 for c in components if c["type"] == "script")
+        script_count = 1
 
     return {
         "language": language_name,
         "file": filename,
         "summary": {
-            "classes": class_count,
-            "methods": method_count,
-            "functions": function_count,
-            "routes": route_count,
+            "classes": sum(1 for c in components if c["type"] == "class"),
+            "methods": sum(1 for c in components if c["type"] == "method"),
+            "functions": sum(1 for c in components if c["type"] == "function"),
+            "routes": sum(1 for c in components if c["type"] == "route"),
             "scripts": script_count,
         },
         "components": components,
     }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
