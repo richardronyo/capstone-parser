@@ -109,10 +109,12 @@ def extract_structure(language_name: str, code: str, filename: str = "") -> dict
     root = tree.root_node
 
     components = []
+    top_level_statements = []
 
     def make_component(type_, name, node, class_name=None):
         snippet = code[node.start_byte:node.end_byte]
-        # Normalize indentation — strip common leading whitespace
+
+        # Normalize indentation
         lines = snippet.splitlines()
         if lines:
             indent = len(lines[0]) - len(lines[0].lstrip())
@@ -127,57 +129,173 @@ def extract_structure(language_name: str, code: str, filename: str = "") -> dict
         }
         if class_name:
             entry["class"] = class_name
+
         components.append(entry)
 
     def walk(node, current_class=None):
+        # -----------------------------
+        # Class detection
+        # -----------------------------
         if node.type in ("class_definition", "class_declaration"):
             class_name = get_node_name(node, code)
-            make_component("class", class_name, node)  # no code field for classes
-            components[-1].pop("code")                 # drop it
+            make_component("class", class_name, node)
+            components[-1].pop("code")  # remove code for classes
+
             for child in node.children:
                 walk(child, class_name)
             return
 
+        # -----------------------------
+        # Function / method detection
+        # -----------------------------
         if node.type in (
             "function_definition", "function_declaration",
             "method_definition", "method_declaration",
             "constructor_declaration",
         ):
-            make_component("method" if current_class else "function",
-                           get_node_name(node, code), node, current_class)
+            make_component(
+                "method" if current_class else "function",
+                get_node_name(node, code),
+                node,
+                current_class,
+            )
 
+        # -----------------------------
+        # Minimal API route detection
+        # -----------------------------
         if node.type == "invocation_expression":
             method_name = get_invocation_name(node, code)
             if method_name in ROUTE_METHODS:
-                # Use the route path as the name if we can find it
                 args = [c for c in node.children if c.type == "argument_list"]
                 route_path = "?"
                 if args and args[0].children:
                     first_arg = args[0].children[0]
                     route_path = code[first_arg.start_byte:first_arg.end_byte].strip('"')
-                make_component("route", f"{method_name} {route_path}",
-                               node, current_class)
+
+                make_component(
+                    "route",
+                    f"{method_name} {route_path}",
+                    node,
+                    current_class,
+                )
                 return
+
+        # -----------------------------
+        # Capture executable top-level statements
+        # -----------------------------
+        if node is root:
+            for child in node.children:
+                if child.type not in (
+                    "import_statement",
+                    "import_from_statement",
+                    "package_clause",
+                    "comment",
+                ):
+                    top_level_statements.append(child)
 
         for child in node.children:
             walk(child, current_class)
 
     walk(root)
 
-    method_count  = sum(1 for c in components if c["type"] == "method")
+    # ---------------------------------------------------------
+    # Script detection fallback
+    # ---------------------------------------------------------
+    if not components and top_level_statements:
+        first = top_level_statements[0]
+        last = top_level_statements[-1]
+
+        snippet = code[first.start_byte:last.end_byte].strip()
+
+        components.append({
+            "type": "script",
+            "name": "top-level code",
+            "lines": f"{first.start_point[0] + 1}-{last.end_point[0] + 1}",
+            "code": snippet,
+        })
+
+    # ---------------------------------------------------------
+    # Summary counts
+    # ---------------------------------------------------------
+    method_count   = sum(1 for c in components if c["type"] == "method")
     function_count = sum(1 for c in components if c["type"] == "function")
-    class_count   = sum(1 for c in components if c["type"] == "class")
-    route_count   = sum(1 for c in components if c["type"] == "route")
+    class_count    = sum(1 for c in components if c["type"] == "class")
+    route_count    = sum(1 for c in components if c["type"] == "route")
+    script_count   = sum(1 for c in components if c["type"] == "script")
 
     return {
-        "language":   language_name,
-        "file":       filename,
-        "summary":    {
-            "classes":   class_count,
-            "methods":   method_count,
+        "language": language_name,
+        "file": filename,
+        "summary": {
+            "classes": class_count,
+            "methods": method_count,
             "functions": function_count,
-            "routes":    route_count,
+            "routes": route_count,
+            "scripts": script_count,
         },
         "components": components,
     }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
