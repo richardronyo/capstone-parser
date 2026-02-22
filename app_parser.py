@@ -142,8 +142,7 @@ def extract_structure(language_name: str, code: str, filename: str = "") -> dict
             walk(child, current_class)
 
     walk(root)
-
-    # If no classes, methods, functions, or routes were detected, treat as a "script"
+    # If no classes, methods, functions, or routes were detected, treat as script
     script_count = 0
     if not any(c["type"] in ("class", "method", "function", "route") for c in components):
         components.append({
@@ -154,16 +153,21 @@ def extract_structure(language_name: str, code: str, filename: str = "") -> dict
         })
         script_count = 1
 
-    return {
-        "language": language_name,
-        "file": filename,
-        "summary": {
-            "classes": sum(1 for c in components if c["type"] == "class"),
-            "methods": sum(1 for c in components if c["type"] == "method"),
-            "functions": sum(1 for c in components if c["type"] == "function"),
-            "routes": sum(1 for c in components if c["type"] == "route"),
-            "scripts": script_count,
-        },
-        "components": components,
+    summary = {
+        "classes": sum(1 for c in components if c["type"] == "class"),
+        "methods": sum(1 for c in components if c["type"] == "method"),
+        "functions": sum(1 for c in components if c["type"] == "function"),
+        "routes": sum(1 for c in components if c["type"] == "route"),
+        "scripts": script_count,
     }
 
+    # 🔥 combine all code blocks
+    combined_code = "\n\n".join(
+        c["code"] for c in components if c.get("code")
+    )
+
+    return {
+        "filename": filename,
+        "summary": summary,
+        "code": combined_code,
+    }

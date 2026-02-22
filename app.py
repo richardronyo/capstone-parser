@@ -28,14 +28,14 @@ async def parse_files(files: List[UploadFile]):
                 code = raw.decode("utf-8-sig")
             except UnicodeDecodeError:
                 results.append({
-                    "filename": file.filename,
+                    
                     "error": "File is not valid UTF-8."
                 })
                 continue
 
             language = detect_language(file.filename, code)
             results.append({
-                "filename": file.filename,
+                
                 "structure": extract_structure(language, code, file.filename)
             })
 
@@ -46,13 +46,13 @@ async def parse_files(files: List[UploadFile]):
 
             try:
                 result = parse_document(tmp_path)
-                results.append({"filename": file.filename, "structure": result})
+                results.append({ "structure": result})
             finally:
                 os.unlink(tmp_path)
 
         else:
             results.append({
-                "filename": file.filename,
+                
                 "error": f"Unsupported file type: {ext}"
             })
 

@@ -25,12 +25,5 @@ Thumbs.db
 tmp/
 
 # Test files
-
-# Test files
-
-# Test files
-
-# Test files
-
-# Test files
 testfiles/*
+test_parser.py
