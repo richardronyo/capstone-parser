@@ -169,5 +169,5 @@ def extract_structure(language_name: str, code: str, filename: str = "") -> dict
     return {
         "filename": filename,
         "summary": summary,
-        "code": combined_code,
+        "content": combined_code,
     }

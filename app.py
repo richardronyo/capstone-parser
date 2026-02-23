@@ -5,7 +5,8 @@ import tempfile
 import os
 
 from app_parser import detect_language, extract_structure
-from doc_parser import parse_document
+from doc_parser import parser
+
 
 app = FastAPI()
 
@@ -45,7 +46,7 @@ async def parse_files(files: List[UploadFile]):
                 tmp_path = tmp.name
 
             try:
-                result = parse_document(tmp_path)
+                result = parser(tmp_path)
                 results.append({ "structure": result})
             finally:
                 os.unlink(tmp_path)

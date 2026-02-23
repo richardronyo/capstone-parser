@@ -446,3 +446,35 @@ def parse_document(file_path: str) -> Dict[str, Any]:
         return parse_txt(file_path)
     else:
         raise ValueError(f"Unsupported format: {ext}. Supported: .pdf, .docx, .md, .rst, .txt")
+
+# ---------------------------------------------------------------------------
+# Wrapper to always return filename, summary, content
+# ---------------------------------------------------------------------------
+
+def parser(file_path: str) -> Dict[str, Any]:
+    """
+    Parse a document and return a standardized dict with:
+        - filename
+        - summary
+        - combined content of all chapters
+    """
+    path = Path(file_path)
+    filename = path.name
+
+    # Call the existing dispatcher
+    parsed = parse_document(file_path)
+
+    # Combine all chapter contents into a single string
+    combined_content = "\n\n".join([chapter.get("content", "") for chapter in parsed.get("chapters", [])])
+
+    # Ensure summary exists
+    summary = parsed.get("summary", {
+        "total_chapters": len(parsed.get("chapters", [])),
+        "chapter_titles": [c.get("title", "Untitled") for c in parsed.get("chapters", [])],
+    })
+
+    return {
+        "filename": filename,
+        "summary": summary,
+        "content": combined_content,
+    }
